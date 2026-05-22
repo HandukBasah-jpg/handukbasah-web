@@ -67,6 +67,12 @@ export default function KalenderPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null);
+  const [activeYear, setActiveYear] = useState(new Date().getFullYear());
+
+  const handleDatesSet = (dateInfo: any) => {
+    const year = dateInfo.view.currentStart.getFullYear();
+    setActiveYear(year);
+  };
 
   // Form state
   const [title, setTitle] = useState("");
@@ -79,6 +85,32 @@ export default function KalenderPage() {
   const [reminder, setReminder] = useState<number>(0);
   const [recurrence, setRecurrence] = useState("");
   const [category, setCategory] = useState("");
+
+  const [locationSuggestions, setLocationSuggestions] = useState<any[]>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+
+  useEffect(() => {
+    if (!location || location.length < 3 || !showLocationSuggestions) {
+      setLocationSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearchingLocation(true);
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(location)}&limit=5&countrycodes=id`);
+        if (res.ok) {
+          const data = await res.json();
+          setLocationSuggestions(data);
+        }
+      } catch (err) {
+        console.error("Gagal memuat lokasi", err);
+      } finally {
+        setIsSearchingLocation(false);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [location, showLocationSuggestions]);
 
   const { data: events = [], isLoading } = useQuery<CalEvent[]>({
     queryKey: ["events"],
@@ -166,6 +198,8 @@ export default function KalenderPage() {
     setAllDay(false);
     setColor("#6366f1");
     setLocation("");
+    setLocationSuggestions([]);
+    setShowLocationSuggestions(false);
     setReminder(0);
     setRecurrence("");
     setCategory("");
@@ -192,7 +226,12 @@ export default function KalenderPage() {
   };
 
   const handleEventClick = (clickInfo: EventClickArg) => {
-    const event = events.find((e) => e.id === clickInfo.event.id);
+    if (clickInfo.event.extendedProps.isHoliday) {
+      toast.info(`🎉 Hari Libur: ${clickInfo.event.title.replace("🔴 ", "")} (${clickInfo.event.extendedProps.category})`);
+      return;
+    }
+    const originalId = clickInfo.event.extendedProps.originalId || clickInfo.event.id;
+    const event = events.find((e) => e.id === originalId);
     if (event) {
       setEditingEvent(event);
       setTitle(event.title);
@@ -207,6 +246,7 @@ export default function KalenderPage() {
       }
       setColor(event.color || "#6366f1");
       setLocation(event.location || "");
+      setShowLocationSuggestions(false);
       setReminder(event.reminder || 0);
       setRecurrence(event.recurrence || "");
       setCategory(event.category || "");
@@ -215,8 +255,9 @@ export default function KalenderPage() {
   };
 
   const handleEventDrop = (dropInfo: EventDropArg) => {
+    const originalId = dropInfo.event.extendedProps.originalId || dropInfo.event.id;
     patchMutation.mutate({
-      id: dropInfo.event.id,
+      id: originalId,
       data: {
         startDate: dropInfo.event.start?.toISOString(),
         endDate: dropInfo.event.end?.toISOString(),
@@ -226,8 +267,9 @@ export default function KalenderPage() {
   };
 
   const handleEventResize = (resizeInfo: EventResizeDoneArg) => {
+    const originalId = resizeInfo.event.extendedProps.originalId || resizeInfo.event.id;
     patchMutation.mutate({
-      id: resizeInfo.event.id,
+      id: originalId,
       data: {
         startDate: resizeInfo.event.start?.toISOString(),
         endDate: resizeInfo.event.end?.toISOString(),
@@ -257,20 +299,96 @@ export default function KalenderPage() {
     }
   };
 
-  // Convert events for FullCalendar
-  const calendarEvents = events.map((event) => ({
-    id: event.id,
-    title: event.title,
-    start: event.startDate,
-    end: event.endDate || undefined,
-    allDay: event.allDay,
-    backgroundColor: event.color || "#6366f1",
-    borderColor: event.color || "#6366f1",
-    extendedProps: {
-      category: event.category,
-      location: event.location,
+  // Fetch Indonesian holidays
+  const { data: holidays = [] } = useQuery<any[]>({
+    queryKey: ["indonesian-holidays", activeYear],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`https://libur.deno.dev/api?year=${activeYear}`);
+        if (!res.ok) return [];
+        return res.json();
+      } catch (err) {
+        console.error("Gagal memuat hari libur:", err);
+        return [];
+      }
     },
-  }));
+  });
+
+  // Convert events for FullCalendar
+  const calendarEvents = [
+    ...events.flatMap((event) => {
+      const baseProps = {
+        id: event.id,
+        title: event.title,
+        allDay: event.allDay,
+        backgroundColor: event.color || "#6366f1",
+        borderColor: event.color || "#6366f1",
+        editable: true,
+        extendedProps: {
+          category: event.category,
+          location: event.location,
+          isHoliday: false,
+          originalId: event.id,
+        },
+      };
+
+      if (!event.recurrence || event.recurrence === "") {
+        return [{
+          ...baseProps,
+          start: event.startDate,
+          end: event.endDate || undefined,
+        }];
+      }
+
+      // Generate recurrences
+      const occurrences = [];
+      const start = new Date(event.startDate);
+      const end = event.endDate ? new Date(event.endDate) : null;
+      const durationMs = end ? end.getTime() - start.getTime() : 0;
+
+      // Limit generation to 1 year ahead
+      const limit = new Date();
+      limit.setFullYear(limit.getFullYear() + 1);
+
+      let currentStart = new Date(start);
+
+      // Add a safety counter to prevent infinite loops just in case
+      let safety = 0;
+      while (currentStart <= limit && safety < 400) {
+        occurrences.push({
+          ...baseProps,
+          id: `${event.id}-${currentStart.getTime()}`,
+          start: currentStart.toISOString(),
+          end: end ? new Date(currentStart.getTime() + durationMs).toISOString() : undefined,
+        });
+
+        if (event.recurrence === "daily") {
+          currentStart = new Date(currentStart.setDate(currentStart.getDate() + 1));
+        } else if (event.recurrence === "weekly") {
+          currentStart = new Date(currentStart.setDate(currentStart.getDate() + 7));
+        } else if (event.recurrence === "monthly") {
+          currentStart = new Date(currentStart.setMonth(currentStart.getMonth() + 1));
+        } else {
+          break;
+        }
+        safety++;
+      }
+      return occurrences;
+    }),
+    ...holidays.map((h: any) => ({
+      id: `holiday-${h.date}-${h.name}`,
+      title: `🔴 ${h.name}`,
+      start: h.date,
+      allDay: true,
+      backgroundColor: h.is_national_holiday ? "#ef4444" : "#f59e0b",
+      borderColor: h.is_national_holiday ? "#ef4444" : "#f59e0b",
+      editable: false,
+      extendedProps: {
+        category: h.is_national_holiday ? "Libur Nasional" : "Cuti Bersama",
+        isHoliday: true,
+      },
+    })),
+  ];
 
   // Browser notification for reminders
   useEffect(() => {
@@ -383,6 +501,7 @@ export default function KalenderPage() {
                 eventClick={handleEventClick}
                 eventDrop={handleEventDrop}
                 eventResize={handleEventResize}
+                datesSet={handleDatesSet}
                 height="auto"
                 aspectRatio={1.5}
                 buttonText={{
@@ -395,6 +514,12 @@ export default function KalenderPage() {
                 nowIndicator={true}
                 slotMinTime="06:00:00"
                 slotMaxTime="23:00:00"
+                eventTimeFormat={{
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  meridiem: false,
+                  hour12: false
+                }}
               />
             )}
           </CardContent>
@@ -567,30 +692,85 @@ export default function KalenderPage() {
 
             <div className="flex items-center justify-between p-3 rounded-xl bg-background/30">
               <Label className="text-sm">Sepanjang hari</Label>
-              <Switch checked={allDay} onCheckedChange={setAllDay} />
+              <Switch checked={allDay} onCheckedChange={(val) => {
+                setAllDay(val);
+                if (val) {
+                  setStartDate(startDate.split("T")[0]);
+                  if (endDate) setEndDate(endDate.split("T")[0]);
+                } else {
+                  setStartDate(startDate.split("T")[0] + "T09:00");
+                  if (endDate) setEndDate(endDate.split("T")[0] + "T10:00");
+                }
+              }} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label>Mulai</Label>
+                <Label>Tanggal Mulai</Label>
                 <Input
-                  type={allDay ? "date" : "datetime-local"}
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
+                  type="date"
+                  value={startDate.split("T")[0] || ""}
+                  onChange={(e) => {
+                    const date = e.target.value;
+                    const time = startDate.includes("T") ? startDate.split("T")[1] : "09:00";
+                    setStartDate(allDay ? date : `${date}T${time}`);
+                    if (!endDate) setEndDate(allDay ? date : `${date}T${time}`);
+                  }}
                   required
                   className="h-10 rounded-xl bg-background/50 text-sm"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Selesai</Label>
+                <Label>Tanggal Selesai</Label>
                 <Input
-                  type={allDay ? "date" : "datetime-local"}
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
+                  type="date"
+                  value={endDate ? endDate.split("T")[0] : ""}
+                  onChange={(e) => {
+                    const date = e.target.value;
+                    if (!date) {
+                      setEndDate("");
+                      return;
+                    }
+                    const time = endDate.includes("T") ? endDate.split("T")[1] : "10:00";
+                    setEndDate(allDay ? date : `${date}T${time}`);
+                  }}
                   className="h-10 rounded-xl bg-background/50 text-sm"
                 />
               </div>
             </div>
+
+            {!allDay && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Jam Mulai</Label>
+                  <Input
+                    type="time"
+                    value={startDate.includes("T") ? startDate.split("T")[1] : "09:00"}
+                    onChange={(e) => {
+                      const time = e.target.value;
+                      const date = startDate.split("T")[0] || format(new Date(), "yyyy-MM-dd");
+                      setStartDate(`${date}T${time}`);
+                    }}
+                    required
+                    className="h-10 rounded-xl bg-background/50 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Jam Selesai</Label>
+                  <Input
+                    type="time"
+                    value={endDate ? (endDate.includes("T") ? endDate.split("T")[1] : "10:00") : ""}
+                    onChange={(e) => {
+                      const time = e.target.value;
+                      if (!time) return;
+                      const date = endDate ? endDate.split("T")[0] : (startDate.split("T")[0] || format(new Date(), "yyyy-MM-dd"));
+                      setEndDate(`${date}T${time}`);
+                    }}
+                    className="h-10 rounded-xl bg-background/50 text-sm"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Kategori</Label>
@@ -621,14 +801,53 @@ export default function KalenderPage() {
 
             <div className="space-y-2">
               <Label>Lokasi (opsional)</Label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Contoh: Ruang 301"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="h-10 rounded-xl bg-background/50 pl-9"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Contoh: Jakarta"
+                    value={location}
+                    onChange={(e) => {
+                      setLocation(e.target.value);
+                      setShowLocationSuggestions(true);
+                    }}
+                    onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 200)}
+                    className="h-10 rounded-xl bg-background/50 pl-9"
+                  />
+                  {showLocationSuggestions && (locationSuggestions.length > 0 || isSearchingLocation) && (
+                    <div className="absolute top-full mt-1 w-full bg-popover/90 backdrop-blur-md border border-border/50 rounded-xl shadow-lg overflow-hidden z-50">
+                      {isSearchingLocation ? (
+                        <div className="p-3 text-sm text-center text-muted-foreground flex items-center justify-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Mencari...
+                        </div>
+                      ) : (
+                        locationSuggestions.map((s, i) => (
+                          <div 
+                            key={i} 
+                            className="px-3 py-2 text-sm hover:bg-background/50 cursor-pointer border-b border-border/10 last:border-0 truncate"
+                            onClick={() => {
+                              setLocation(s.display_name);
+                              setShowLocationSuggestions(false);
+                            }}
+                            title={s.display_name}
+                          >
+                            {s.display_name}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="h-10 px-3 shrink-0 rounded-xl bg-background/50 border-border/50 hover:bg-background"
+                  onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location || "Indonesia")}`, "_blank")}
+                  title="Buka di Google Maps"
+                >
+                  <MapPin className="h-4 w-4 sm:mr-2 text-blue-500" />
+                  <span className="hidden sm:inline">Buka Maps</span>
+                </Button>
               </div>
             </div>
 

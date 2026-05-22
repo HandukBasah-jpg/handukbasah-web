@@ -88,17 +88,17 @@ export function Sidebar() {
           {!collapsed && (
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
-                <span className="text-white font-bold text-sm">M</span>
+                <span className="text-white font-bold text-sm">H</span>
               </div>
               <div>
-                <h1 className="font-bold text-sm tracking-tight">MyDashboard</h1>
+                <h1 className="font-bold text-sm tracking-tight">HandukBasah</h1>
                 <p className="text-[10px] text-muted-foreground">Personal App</p>
               </div>
             </div>
           )}
           {collapsed && (
             <div className="h-9 w-9 mx-auto rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
-              <span className="text-white font-bold text-sm">M</span>
+              <span className="text-white font-bold text-sm">H</span>
             </div>
           )}
 

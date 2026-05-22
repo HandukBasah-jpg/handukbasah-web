@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Wallet, StickyNote, CalendarDays, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -82,28 +82,9 @@ export default function LoginPage() {
         {/* Logo & Title */}
         <div className="text-center mb-8">
           <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 shadow-xl shadow-indigo-500/25 mb-4 animate-pulse-glow">
-            <span className="text-white font-bold text-xl">M</span>
+            <span className="text-white font-bold text-xl">H</span>
           </div>
-          <h1 className="text-2xl font-bold gradient-text">MyDashboard</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Kelola keuangan, catatan, dan jadwal kamu
-          </p>
-        </div>
-
-        {/* Feature pills */}
-        <div className="flex justify-center gap-2 mb-6">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
-            <Wallet className="h-3 w-3" />
-            Keuangan
-          </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium">
-            <StickyNote className="h-3 w-3" />
-            Notepad
-          </div>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-medium">
-            <CalendarDays className="h-3 w-3" />
-            Kalender
-          </div>
+          <h1 className="text-2xl font-bold gradient-text">HandukBasah</h1>
         </div>
 
         {/* Login Card */}

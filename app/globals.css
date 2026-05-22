@@ -50,6 +50,7 @@
 
 /* Dark mode as default */
 :root {
+  color-scheme: dark;
   --background: oklch(0.13 0.01 260);
   --foreground: oklch(0.96 0.005 260);
   --card: oklch(0.17 0.012 260);

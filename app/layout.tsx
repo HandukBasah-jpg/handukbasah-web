@@ -9,7 +9,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "MyDashboard — Personal Finance, Notes & Calendar",
+  title: "HandukBasah — Personal Finance, Notes & Calendar",
   description:
     "Aplikasi personal untuk mengelola keuangan, catatan, dan jadwal harian kamu.",
 };
