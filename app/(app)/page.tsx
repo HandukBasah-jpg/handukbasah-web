@@ -28,7 +28,7 @@ export default async function DashboardPage() {
     });
   }
 
-  // Fetch dashboard data
+  // Fetch all dashboard data in parallel for faster loading
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -36,30 +36,33 @@ export default async function DashboardPage() {
   const endOfDay = new Date(startOfDay);
   endOfDay.setDate(endOfDay.getDate() + 1);
 
+  const userId = dbUser.id;
+
   const [transactions, recentNotes, todayEvents, upcomingEvents] =
     await Promise.all([
       prisma.transaction.findMany({
         where: {
-          userId: dbUser.id,
+          userId,
           date: { gte: startOfMonth, lte: endOfMonth },
         },
         orderBy: { date: "desc" },
+        take: 50, // Limit results for performance
       }),
       prisma.note.findMany({
-        where: { userId: dbUser.id },
+        where: { userId },
         orderBy: [{ isPinned: "desc" }, { updatedAt: "desc" }],
         take: 4,
       }),
       prisma.event.findMany({
         where: {
-          userId: dbUser.id,
+          userId,
           startDate: { gte: startOfDay, lt: endOfDay },
         },
         orderBy: { startDate: "asc" },
       }),
       prisma.event.findMany({
         where: {
-          userId: dbUser.id,
+          userId,
           startDate: { gte: endOfDay },
         },
         orderBy: { startDate: "asc" },
